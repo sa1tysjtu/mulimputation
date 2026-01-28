@@ -149,11 +149,16 @@ def train(args):
         se_sum = 0.0
         ae_sum = 0.0
         num_total = 0
+        per_table_stats = {}
         for table_name, graph in data.graphs.items():
             mask = getattr(graph, mask_attr).view(graph.num_rows, graph.num_cols).to(device)
             row_emb = row_embs[table_name]
             col_emb = col_embs[table_name]
             feature_df = data.tables[table_name].feature_df
+
+            table_se_sum = 0.0
+            table_ae_sum = 0.0
+            table_total = 0
 
             for col_idx, col_name in enumerate(graph.feature_cols):
                 col_type = graph.feature_types[col_name]
@@ -185,6 +190,11 @@ def train(args):
                     se_sum += se.sum().item()
                     ae_sum += ae.sum().item()
                     num_total += int(valid.sum().item())
+                    table_se_sum += se.sum().item()
+                    table_ae_sum += ae.sum().item()
+                    table_total += int(valid.sum().item())
+
+            per_table_stats[table_name] = (table_se_sum, table_ae_sum, table_total)
 
         if num_count > 0:
             loss_num = loss_num / num_count
@@ -196,6 +206,16 @@ def train(args):
         else:
             rmse = float("nan")
             mae = float("nan")
+
+        if args.report_per_table and mask_attr in ("val_mask", "test_mask"):
+            for table_name, (table_se, table_ae, table_n) in per_table_stats.items():
+                if table_n <= 0:
+                    continue
+                table_rmse = (table_se / table_n) ** 0.5
+                table_mae = table_ae / table_n
+                print(
+                    f"    {mask_attr} table={table_name} rmse={table_rmse:.4f} mae={table_mae:.4f} n={table_n}"
+                )
         return loss_num, loss_cat, rmse, mae
 
     best_val = float("inf")
@@ -239,16 +259,18 @@ def train(args):
             (rel.src_table, rel.src_row, rel.fk_col, rel.dst_table, rel.dst_row)
             for rel in data.observed_fk
         ]
-        row_embs = model.propagate_observed_fk(row_embs, obs_edges)
-        row_embs = apply_soft_fk_propagation(
-            model,
-            row_embs,
-            data.missing_fk,
-            k_near=args.k_near,
-            k_rand=args.k_rand,
-            pool_size=args.pool_size,
-            temperature=args.temperature,
-        )
+        if args.use_fk_propagation:
+            row_embs = model.propagate_observed_fk(row_embs, obs_edges)
+        if args.use_soft_fk_propagation:
+            row_embs = apply_soft_fk_propagation(
+                model,
+                row_embs,
+                data.missing_fk,
+                k_near=args.k_near,
+                k_rand=args.k_rand,
+                pool_size=args.pool_size,
+                temperature=args.temperature,
+            )
 
         # Row->cell update after cross-table propagation.
         for name, graph in data.graphs.items():
@@ -352,6 +374,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--weight_num", type=float, default=1.0)
     parser.add_argument("--weight_fk", type=float, default=0.2)
+    parser.add_argument("--use_fk_propagation", type=int, default=1)
+    parser.add_argument("--use_soft_fk_propagation", type=int, default=1)
+    parser.add_argument("--report_per_table", type=int, default=0)
     parser.add_argument("--eval_every", type=int, default=1)
     parser.add_argument("--patience", type=int, default=10)
     parser.add_argument("--min_delta", type=float, default=1e-4)

@@ -78,7 +78,9 @@ def build_table_graph(
 
     numeric_stats: Dict[str, tuple] = {}
     for col, col_type in feature_types.items():
-        if col_type != "numerical":
+        # Keep scales consistent: fkeys are still included as value nodes, so we
+        # min-max scale them like other numeric features to avoid dominating.
+        if col_type not in ("numerical", "fkey"):
             continue
         series = feature_df[col]
         if series.isna().all():
@@ -101,8 +103,18 @@ def build_table_graph(
     nan_mask = pd.isna(raw_values).reshape(-1)
 
     if missing_mechanism != "MCAR":
+        # produce_NA's MAR/MNAR variants do matrix ops that will propagate NaNs,
+        # so fill NaNs before generating the synthetic missingness mask.
+        safe_values = raw_values
+        if np.isnan(raw_values).any():
+            safe_values = raw_values.copy()
+            col_means = np.nanmean(safe_values, axis=0)
+            col_means = np.where(np.isfinite(col_means), col_means, 0.0)
+            nan_rows, nan_cols = np.where(np.isnan(safe_values))
+            safe_values[nan_rows, nan_cols] = col_means[nan_cols]
+
         train_mask = produce_NA(
-            torch.tensor(raw_values, dtype=torch.float),
+            torch.tensor(safe_values, dtype=torch.float),
             p_miss=missing_ratio,
             mecha=missing_mechanism,
             n_row=nrow,
