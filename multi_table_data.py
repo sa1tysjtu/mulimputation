@@ -142,6 +142,7 @@ def load_multi_table_data(
     missing_ratio: float = 0.3,
     missing_mechanism: str = "MCAR",
     seed: int = 0,
+    mask_fk: bool = True,
 ) -> MultiTableData:
     tables = load_relbench_tables(
         dataset_name=dataset_name,
@@ -163,6 +164,7 @@ def load_multi_table_data(
             missing_ratio=missing_ratio,
             missing_mechanism=missing_mechanism,
             seed=seed,
+            mask_fk=mask_fk,
         )
 
     observed_fk, missing_fk = _collect_fk_relations(tables, graphs)

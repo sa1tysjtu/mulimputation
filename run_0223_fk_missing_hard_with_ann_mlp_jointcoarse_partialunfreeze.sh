@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="$ROOT_DIR/logs/0223_fk_missing_hard_with_ann_mlp_jointcoarse_partialunfreeze"
+mkdir -p "$LOG_DIR"
+
+TS="$(date +"%Y%m%d_%H%M%S")"
+LOG_FILE="$LOG_DIR/0223_fk_missing_hard_with_ann_mlp_jointcoarse_partialunfreeze_${TS}.log"
+
+echo "Logging to $LOG_FILE"
+stdbuf -oL -eL python -u "$ROOT_DIR/0223_fk_missing_hard_with_ann_mlp_jointcoarse_partialunfreeze.py" "$@" 2>&1 | tee "$LOG_FILE"

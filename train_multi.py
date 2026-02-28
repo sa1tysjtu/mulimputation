@@ -121,6 +121,7 @@ def train(args):
         missing_ratio=args.missing_ratio,
         missing_mechanism=args.missing_mechanism,
         seed=args.seed,
+        mask_fk=bool(args.mask_fk),
     )
 
     relation_specs = build_relation_specs(data)
@@ -135,6 +136,21 @@ def train(args):
     device = torch.device(f"cuda:{args.device}" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+    scheduler = None
+    if args.scheduler == "plateau":
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",
+            factor=args.sched_factor,
+            patience=args.sched_patience,
+            min_lr=args.min_lr,
+        )
+    elif args.scheduler == "cos":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=max(1, args.sched_tmax),
+            eta_min=args.min_lr,
+        )
     huber = nn.HuberLoss(delta=1.0)
 
     def compute_value_losses(mask_attr: str):
@@ -335,9 +351,15 @@ def train(args):
                 else:
                     bad_epochs += 1
 
+                if scheduler is not None and args.scheduler == "plateau":
+                    scheduler.step(val_rmse)
+
                 if args.patience > 0 and bad_epochs >= args.patience:
                     print(f"Early stopping at epoch {epoch}")
                     break
+
+        if scheduler is not None and args.scheduler == "cos":
+            scheduler.step()
 
     if best_state is not None:
         model.load_state_dict(best_state["model"])
@@ -382,6 +404,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--min_delta", type=float, default=1e-4)
     parser.add_argument("--known", type=float, default=0.6)
     parser.add_argument("--use_known_mask", type=int, default=1)
+    parser.add_argument("--mask_fk", type=int, default=1)
+    parser.add_argument("--scheduler", type=str, default="none")
+    parser.add_argument("--sched_factor", type=float, default=0.5)
+    parser.add_argument("--sched_patience", type=int, default=3)
+    parser.add_argument("--sched_tmax", type=int, default=200)
+    parser.add_argument("--min_lr", type=float, default=1e-5)
     return parser
 
 

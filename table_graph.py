@@ -72,6 +72,7 @@ def build_table_graph(
     missing_ratio: float,
     missing_mechanism: str,
     seed: int = 0,
+    mask_fk: bool = True,
 ) -> TableGraph:
     if feature_df.empty:
         raise ValueError(f"Table {name} has no usable feature columns after filtering.")
@@ -151,6 +152,14 @@ def build_table_graph(
         train_mask = torch.tensor(train_mask, dtype=torch.bool)
         val_mask = torch.tensor(val_mask, dtype=torch.bool)
         test_mask = torch.tensor(test_mask, dtype=torch.bool)
+
+    if not mask_fk:
+        for col_idx, col_name in enumerate(feature_df.columns):
+            if feature_types.get(col_name) == "fkey":
+                flat = col_idx + ncol * np.arange(nrow)
+                train_mask[flat] = True
+                val_mask[flat] = False
+                test_mask[flat] = False
 
     return TableGraph(
         name=name,
